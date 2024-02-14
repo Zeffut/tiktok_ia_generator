@@ -94,19 +94,19 @@ def extract_audio(video_file, audio_file) :
     audio_clip.write_audiofile(audio_file, codec='mp3')
 
 def main():
-    video_url = "https://www.youtube.com/watch?v=lefwatNKVvQ&t=1974s"
+    video_url = input("https://www.youtube.com/watch?v=lefwatNKVvQ&t=1974s")
     start = "0"
     end = "3600"
     output_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Video")
     audio_path = os.path.join(output_folder, "full_video_audio.mp3")
     model = whisper.load_model("tiny")
-    #download_video(video_url, output_folder)
+    download_video(video_url, output_folder)
     video_crop_path = os.path.join(output_folder, "full_video_crop.mp4")
     video_path = os.path.join(output_folder, "full_video.mp4")
-    #crop_video(video_path, video_crop_path, start, end)
+    crop_video(video_path, video_crop_path, start, end)
     crop_audio_path = os.path.join(output_folder, "cropped_audio.mp3")
-    #extract_audio(video_crop_path, crop_audio_path)
-    #os.remove(video_path)
+    extract_audio(video_crop_path, crop_audio_path)
+    os.remove(video_path)
 
     transcript = model.transcribe(crop_audio_path)
     transcript_path = os.path.join(output_folder, "transcript.txt")
@@ -131,7 +131,7 @@ def main():
     print(response)
 
     final_video_path = os.path.join(output_folder, "final_video.mp4")
-    #crop_video(video_path, final_video_path, start, end)
+    crop_video(video_path, final_video_path, start, end)
 
 main()
  
