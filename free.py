@@ -78,9 +78,9 @@ def main():
     output_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Video")
     audio_path = os.path.join(output_folder, "full_video_audio.mp3")
     model = whisper.load_model("tiny")
-    #download_video(video_url, output_folder)
+    download_video(video_url, output_folder)
     video_path = os.path.join(output_folder, "full_video.mp4")
-    #extract_audio(video_path, audio_path)
+    extract_audio(video_path, audio_path)
     #os.remove(video_path)
 
     transcript = model.transcribe(audio_path)
@@ -111,21 +111,13 @@ def main():
         provider=g4f.Provider.Bing,
         messages=messages
     )
-    print(response)
     response_dict = json.loads(response)
     print(response_dict)
 
-    video = mp.VideoFileClip(video_path)
+    start_time = response_dict.get("start_time")
+    end_time = response_dict.get("end_time")
+    description = response_dict.get("description")
 
-    # Boucler sur chaque élément de la liste
-    for clip in response_dict:
-        start_time = clip["start_time"]
-        end_time = clip["end_time"]
-        description = clip["description"]
-
-        segment = video.subclip(start_time, end_time)
-        output_path = f"segment_{description}.mp4"
-        segment.write_videofile(output_path, codec="libx264")
-        print(f"Le segment découpé '{description}' a été enregistré sous {output_path}")
+    crop_video(video_path, os.path.join(output_folder, f"{description}.mp4"), start_time, end_time)
 
 main()
