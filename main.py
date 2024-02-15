@@ -1,14 +1,10 @@
-import re, os, json
+import os, json
 from pytube import YouTube
-from pydub import AudioSegment
 import moviepy.editor as mp
 import whisper
-from youtube_transcript_api import YouTubeTranscriptApi
 from urllib.parse import parse_qs, urlparse
 from moviepy.video.io.VideoFileClip import VideoFileClip
-import openai
 from openai import OpenAI
-
 
 def request(messages, model):
     try:
