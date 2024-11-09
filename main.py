@@ -5,6 +5,8 @@ import whisper
 from urllib.parse import parse_qs, urlparse
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from api_requests import send_request_to_api
+import re
+import time
 
 def decouper_prompt(prompt, context, longueur_morceau):
     morceaux = [prompt[i:i+longueur_morceau] for i in range(0, len(prompt), longueur_morceau)]
@@ -51,7 +53,6 @@ def clear_transcript(transcript):
         del segment["compression_ratio"]
         del segment["no_speech_prob"]
 
-    # Ajouter des retours à la ligne pour la lisibilité
     transcript_text = "\n".join([json.dumps(segment, indent=2) for segment in transcript["segments"]])
     return transcript_text
 
@@ -70,60 +71,111 @@ def extract_audio(video_file, audio_file) :
     audio_clip = video_clip.audio
     audio_clip.write_audiofile(audio_file, codec='mp3')
 
-def crop_viral_clips(video_path, output_folder, viral_clips):
-    for i, clip in enumerate(viral_clips):
+def is_json(myjson):
+    try:
+        json_object = json.loads(myjson)
+    except ValueError as e:
+        return False
+    return True
+
+def clean_response_text(response_text):
+    try:
+        # Rechercher et extraire toutes les structures JSON valides dans le texte
+        json_matches = re.findall(r'(\{.*?\})', response_text, re.DOTALL)
+        json_data = []
+        for match in json_matches:
+            try:
+                json_data.append(json.loads(match))
+            except json.JSONDecodeError:
+                print(f"Erreur : JSON invalide trouvé : {match}")
+        return json_data if json_data else None
+    except Exception as e:
+        print(f"Erreur lors du nettoyage de la réponse : {str(e)}")
+    return None
+
+def extract_clips_from_response(video_path, output_folder, json_data):
+    for i, clip in enumerate(json_data):
         start_time = clip["start_time"]
         end_time = clip["end_time"]
-        output_path = os.path.join(output_folder, f"viral_clip_{i+1}.mp4")
+        duration = end_time - start_time
+        if duration < 30:
+            print(f"Erreur : l'extrait {i+1} fait moins de 30 secondes ({duration} secondes).")
+            continue
+        output_path = os.path.join(output_folder, f"clip_{i+1}.mp4")
         crop_video(video_path, output_path, start_time, end_time)
+
+def send_multiple_requests(transcript_clear, response_obj):
+    max_length = 30 * 250 * 5  # 30 minutes in seconds
+    segments = transcript_clear.split('\n')
+    combined_results = []
+
+    for i in range(0, len(segments), max_length):
+        segment = '\n'.join(segments[i:i + max_length])
+        prompt = (
+            f"Voici la transcription de la vidéo : \n\n{segment}\n\n"
+            f"Identifie les moments les plus intéressants de la vidéo. Chaque extrait sélectionné "
+            f"doit impérativement avoir une durée de **60 secondes minimum** et ne doit pas être coupé avant cette durée. "
+            f"Les extraits peuvent être plus longs, mais **aucun extrait ne doit être inférieur à 60 secondes**.\n"
+            f"Réponds uniquement en JSON dans le format suivant, sans autres commentaires : {response_obj}"
+        )
+
+        print("Requète à l'API...")
+        response = send_request_to_api({"message": prompt})
+
+        if response:
+            response_text = response.get('response', '')
+            if not response_text:
+                print("Erreur : la réponse de l'API est vide.")
+                continue
+            json_data = clean_response_text(response_text)
+            if json_data:
+                combined_results.extend(json_data)
+            else:
+                print("Erreur : impossible d'extraire un JSON valide de la réponse.")
+                print(f"Contenu de la réponse : {response_text}")
+
+    return combined_results
 
 def main():
     video_url = input("Entrez l'URL de la vidéo YouTube : ")
     output_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Video")
-    audio_path = os.path.join(output_folder, "full_video_audio.mp3")
     model = whisper.load_model("tiny")
     download_video(video_url, output_folder)
     video_path = os.path.join(output_folder, "full_video.mp4")
     
-    # Vérifiez si le fichier vidéo a été téléchargé avec succès
     if not os.path.exists(video_path):
         print(f"Erreur : le fichier vidéo {video_path} n'a pas été trouvé.")
         return
     
     crop_audio_path = os.path.join(output_folder, "cropped_audio.mp3")
     extract_audio(video_path, crop_audio_path)
+    time.sleep(5)
 
     transcript = model.transcribe(crop_audio_path)
+    os.remove(crop_audio_path)
     transcript_clear = clear_transcript(transcript)
 
-    context = "You are a ViralGPT helpful assistant. You are master at reading youtube transcripts and identifying the most Interesting and Viral Content"
-    response_obj='''{
-    "start_time": 97.19, 
-    "end_time": 127.43,
-    "description": "Put here a simple description of the context in max 10 words",
-    "duration":60 #Length in seconds
-  }'''
-    prompt = f"This is a transcript of a video. Please identify the most interesing sections from the whole, make sure that the duration is more than 1 minutes (it MUST to be more than 60 seconds), Make Sure you provide extremely accurate timestamps and respond only in this JSON format {response_obj}  \n Here is the Transcription:\n{transcript_clear}"
-    messages = decouper_prompt(prompt, context, 32000)
+    response_obj = '''{
+        "start_time": 97.19, 
+        "end_time": 167.43,
+        "description": "Put here a simple description of the context in max 10 words",
+        "duration":60
+    },
+    {
+        "start_time": 530.45, 
+        "end_time": 598.27,
+        "description": "Put here a simple description of the context in max 10 words",
+        "duration":68
+    }'''
 
-    # Convertir les messages en texte brut
-    messages_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
-    response = send_request_to_api({"message": messages_text})
-    print(response)
-    if response:
-        # Vérifiez le contenu de la réponse avant de l'analyser en JSON
-        try:
-            response_text = response.get('response', '')
-            viral_clips = json.loads(response_text)
-        except json.JSONDecodeError as e:
-            print(f"Erreur lors de l'analyse de la réponse JSON : {e}")
-            print(f"Contenu de la réponse : {response_text}")
-            return
-        
-        # Recadrez la vidéo en fonction des extraits viraux
-        crop_viral_clips(video_path, output_folder, viral_clips)
+    combined_results = send_multiple_requests(transcript_clear, response_obj)
 
-    # Supprimez le fichier vidéo original après avoir terminé toutes les opérations
+    if combined_results:
+        print(json.dumps(combined_results, indent=2))
+        extract_clips_from_response(video_path, output_folder, combined_results)
+    else:
+        print("Erreur : aucun extrait valide trouvé.")
+
     os.remove(video_path)
 
 main()

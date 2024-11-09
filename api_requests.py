@@ -3,9 +3,9 @@ import json
 
 def send_request_to_api(data):
     url = "http://humble-mantis-evident.ngrok-free.app/chat"
-    headers = {'Content-Type': 'application/json'}  # Garder le type de contenu en application/json
+    headers = {'Content-Type': 'application/json'}
     try:
-        response = requests.post(url, data=json.dumps(data), headers=headers)  # Convertir les données en JSON
+        response = requests.post(url, data=json.dumps(data), headers=headers)
         if response.status_code == 200:
             return response.json()
         else:
